@@ -3,6 +3,7 @@ package provider
 import (
 	"encoding/base64"
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -242,6 +243,7 @@ func TestAccItemSSHKey(t *testing.T) {
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
+				// Test default PKCS8 format
 				Config: testAccProviderConfig(testServer.URL) + testAccItemDataSourceConfig(expectedItem.Vault.ID, expectedItem.ID),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("data.onepassword_item.test", "id", fmt.Sprintf("vaults/%s/items/%s", expectedVault.ID, expectedItem.ID)),
@@ -251,10 +253,82 @@ func TestAccItemSSHKey(t *testing.T) {
 					resource.TestCheckResourceAttr("data.onepassword_item.test", "category", strings.ToLower(string(expectedItem.Category))),
 					resource.TestCheckResourceAttr("data.onepassword_item.test", "private_key", expectedItem.Fields[0].Value),
 					resource.TestCheckResourceAttr("data.onepassword_item.test", "public_key", expectedItem.Fields[1].Value),
+					resource.TestCheckResourceAttr("data.onepassword_item.test", "private_key_format", "pkcs8"),
+				),
+			},
+			{
+				// Test OpenSSH format
+				Config: testAccProviderConfig(testServer.URL) + testAccItemDataSourceConfigWithFormat(expectedItem.Vault.ID, expectedItem.ID, "openssh"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("data.onepassword_item.test", "id", fmt.Sprintf("vaults/%s/items/%s", expectedVault.ID, expectedItem.ID)),
+					resource.TestCheckResourceAttr("data.onepassword_item.test", "vault", expectedVault.ID),
+					resource.TestCheckResourceAttr("data.onepassword_item.test", "title", expectedItem.Title),
+					resource.TestCheckResourceAttr("data.onepassword_item.test", "uuid", expectedItem.ID),
+					resource.TestCheckResourceAttr("data.onepassword_item.test", "category", strings.ToLower(string(expectedItem.Category))),
+					resource.TestCheckResourceAttr("data.onepassword_item.test", "private_key_format", "openssh"),
+					// Note: We can't check the exact private key value here since it will be transformed by op CLI
+					resource.TestCheckResourceAttr("data.onepassword_item.test", "public_key", expectedItem.Fields[1].Value),
 				),
 			},
 		},
 	})
+}
+
+func TestAccItemSSHKeyConnectWarning(t *testing.T) {
+	expectedItem := generateSSHKeyItem()
+	expectedVault := op.Vault{
+		ID:          expectedItem.Vault.ID,
+		Name:        "Name of the vault",
+		Description: "This vault will be retrieved",
+	}
+
+	testServer := setupTestServer(expectedItem, expectedVault, t)
+	defer testServer.Close()
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccProviderConfig(testServer.URL) + testAccItemDataSourceConfigWithFormat(expectedItem.Vault.ID, expectedItem.ID, "openssh"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("data.onepassword_item.test", "private_key", expectedItem.Fields[0].Value),
+					resource.TestCheckResourceAttr("data.onepassword_item.test", "private_key_format", "openssh"),
+				),
+			},
+		},
+	})
+}
+
+func TestAccItemSSHKeyInvalidFormat(t *testing.T) {
+	expectedItem := generateSSHKeyItem()
+	expectedVault := op.Vault{
+		ID:          expectedItem.Vault.ID,
+		Name:        "Name of the vault",
+		Description: "This vault will be retrieved",
+	}
+
+	testServer := setupTestServer(expectedItem, expectedVault, t)
+	defer testServer.Close()
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				// Test invalid format
+				Config:      testAccProviderConfig(testServer.URL) + testAccItemDataSourceConfigWithFormat(expectedItem.Vault.ID, expectedItem.ID, "invalid"),
+				ExpectError: regexp.MustCompile(`Invalid Attribute Value Match`),
+			},
+		},
+	})
+}
+
+func testAccItemDataSourceConfigWithFormat(vault, uuid, format string) string {
+	return fmt.Sprintf(`
+data "onepassword_item" "test" {
+  vault = "%s"
+  uuid = "%s"
+  private_key_format = "%s"
+}`, vault, uuid, format)
 }
 
 func testAccItemDataSourceConfig(vault, uuid string) string {

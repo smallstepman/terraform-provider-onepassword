@@ -29,6 +29,7 @@ data "onepassword_item" "example" {
 ### Optional
 
 - `note_value` (String, Sensitive) Secure Note value.
+- `private_key_format` (String) Format of the private key. Can be 'pkcs8' (default) or 'openssh'. Note: OpenSSH format conversion is only available when using CLI authentication. When using Connect authentication, private keys will always be in PKCS8 format.
 - `title` (String) The title of the item to retrieve. This field will be populated with the title of the item if the item it looked up by its UUID.
 - `uuid` (String) The UUID of the item to retrieve. This field will be populated with the UUID of the item if the item it looked up by its title.
 

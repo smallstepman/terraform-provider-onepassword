@@ -17,6 +17,7 @@ import (
 
 	op "github.com/1Password/connect-sdk-go/onepassword"
 	"github.com/1Password/terraform-provider-onepassword/v2/internal/onepassword"
+	"github.com/1Password/terraform-provider-onepassword/v2/internal/onepassword/connect"
 )
 
 // Ensure provider defined types fully satisfy framework interfaces.
@@ -33,25 +34,26 @@ type OnePasswordItemDataSource struct {
 
 // OnePasswordItemDataSourceModel describes the data source data model.
 type OnePasswordItemDataSourceModel struct {
-	ID         types.String                  `tfsdk:"id"`
-	Vault      types.String                  `tfsdk:"vault"`
-	UUID       types.String                  `tfsdk:"uuid"`
-	Title      types.String                  `tfsdk:"title"`
-	Category   types.String                  `tfsdk:"category"`
-	URL        types.String                  `tfsdk:"url"`
-	Hostname   types.String                  `tfsdk:"hostname"`
-	Database   types.String                  `tfsdk:"database"`
-	Port       types.String                  `tfsdk:"port"`
-	Type       types.String                  `tfsdk:"type"`
-	Tags       types.List                    `tfsdk:"tags"`
-	Username   types.String                  `tfsdk:"username"`
-	Password   types.String                  `tfsdk:"password"`
-	NoteValue  types.String                  `tfsdk:"note_value"`
-	Credential types.String                  `tfsdk:"credential"`
-	PublicKey  types.String                  `tfsdk:"public_key"`
-	PrivateKey types.String                  `tfsdk:"private_key"`
-	Section    []OnePasswordItemSectionModel `tfsdk:"section"`
-	File       []OnePasswordItemFileModel    `tfsdk:"file"`
+	ID               types.String                  `tfsdk:"id"`
+	Vault            types.String                  `tfsdk:"vault"`
+	UUID             types.String                  `tfsdk:"uuid"`
+	Title            types.String                  `tfsdk:"title"`
+	Category         types.String                  `tfsdk:"category"`
+	URL              types.String                  `tfsdk:"url"`
+	Hostname         types.String                  `tfsdk:"hostname"`
+	Database         types.String                  `tfsdk:"database"`
+	Port             types.String                  `tfsdk:"port"`
+	Type             types.String                  `tfsdk:"type"`
+	Tags             types.List                    `tfsdk:"tags"`
+	Username         types.String                  `tfsdk:"username"`
+	Password         types.String                  `tfsdk:"password"`
+	NoteValue        types.String                  `tfsdk:"note_value"`
+	Credential       types.String                  `tfsdk:"credential"`
+	PublicKey        types.String                  `tfsdk:"public_key"`
+	PrivateKey       types.String                  `tfsdk:"private_key"`
+	PrivateKeyFormat types.String                 `tfsdk:"private_key_format"`
+	Section          []OnePasswordItemSectionModel `tfsdk:"section"`
+	File             []OnePasswordItemFileModel    `tfsdk:"file"`
 }
 
 type OnePasswordItemFileModel struct {
@@ -190,6 +192,14 @@ func (d *OnePasswordItemDataSource) Schema(ctx context.Context, req datasource.S
 				MarkdownDescription: privateKeyDescription,
 				Computed:            true,
 				Sensitive:           true,
+			},
+			"private_key_format": schema.StringAttribute{
+				MarkdownDescription: "Format of the private key. Can be 'pkcs8' (default) or 'openssh'.",
+				Optional:            true,
+				Computed:            true,
+				Validators: []validator.String{
+					stringvalidator.OneOf("pkcs8", "openssh"),
+				},
 			},
 		},
 		Blocks: map[string]schema.Block{
@@ -374,7 +384,34 @@ func (d *OnePasswordItemDataSource) Read(ctx context.Context, req datasource.Rea
 				case "public key":
 					data.PublicKey = types.StringValue(f.Value)
 				case "private key":
-					data.PrivateKey = types.StringValue(f.Value)
+					format := data.PrivateKeyFormat.ValueString()
+					if format == "" {
+						format = "pkcs8"
+						data.PrivateKeyFormat = types.StringValue(format)
+					}
+					if format == "openssh" {
+						// Check if we're using Connect authentication
+						_, isConnectClient := d.client.(*connect.Client)
+						if isConnectClient {
+							resp.Diagnostics.AddWarning(
+								"OpenSSH format not supported with Connect authentication",
+								"OpenSSH format conversion is only available when using CLI authentication. The private key will be returned in PKCS8 format.",
+							)
+							data.PrivateKey = types.StringValue(f.Value)
+						} else {
+							// Use op read with ssh-format parameter for OpenSSH format
+							content, err := d.client.GetFileContent(ctx, &op.File{ID: f.ID}, data.UUID.ValueString(), data.Vault.ValueString(), "?ssh-format=openssh")
+							if err != nil {
+								resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read private key in OpenSSH format: %s", err))
+								return
+							}
+							data.PrivateKey = types.StringValue(string(content))
+						}
+					} else {
+						// Default PKCS8 format from the field value
+						data.PrivateKey = types.StringValue(f.Value)
+					}
+					data.PrivateKeyFormat = types.StringValue(data.PrivateKeyFormat.ValueString())
 				}
 			}
 

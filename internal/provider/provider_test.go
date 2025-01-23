@@ -19,6 +19,8 @@ func testAccProviderConfig(url string) string {
 	return fmt.Sprintf(`
 	  provider "onepassword" {
 		url = "%s"
-		token = "<PASSWORD>"
+		token = "test-token"
+		service_account_token = ""
+		account = ""
 	  }`, url)
 }

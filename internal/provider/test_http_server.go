@@ -76,10 +76,17 @@ func setupTestServer(expectedItem *onepassword.Item, expectedVault onepassword.V
 				if i == -1 {
 					t.Errorf("file not found")
 				}
-				_, err := w.Write(fileBytes[i])
+				content := fileBytes[i]
+				if strings.Contains(r.URL.RawQuery, "ssh-format=openssh") {
+					content = []byte("-----BEGIN OPENSSH PRIVATE KEY-----\nMOCK OPENSSH KEY\n-----END OPENSSH PRIVATE KEY-----")
+				}
+				_, err := w.Write(content)
 				if err != nil {
 					t.Errorf("error writing body: %s", err)
 				}
+			} else if r.URL.Path == "/" {
+				w.Header().Set("1Password-Connect-Version", "1.3.0")
+				w.WriteHeader(http.StatusOK)
 			} else {
 				t.Errorf("Unexpected request: %s Consider adding this endpoint to the test server", r.URL.String())
 			}

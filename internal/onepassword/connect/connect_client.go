@@ -39,7 +39,8 @@ func (c *Client) DeleteItem(_ context.Context, item *onepassword.Item, vaultUuid
 	return c.connectClient.DeleteItem(item, vaultUuid)
 }
 
-func (w *Client) GetFileContent(_ context.Context, file *onepassword.File, itemUUID, vaultUUID string) ([]byte, error) {
+func (w *Client) GetFileContent(_ context.Context, file *onepassword.File, itemUUID, vaultUUID string, queryParams ...string) ([]byte, error) {
+	// Connect client doesn't support query parameters, so we ignore them
 	return w.connectClient.GetFileContent(file)
 }
 
